@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NES">
+<title>NES Pad</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -apple-system,system-ui,sans-serif;overflow:hidden;touch-action:none;overscroll-behavior:none}
+#pad{position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);display:grid;grid-template-columns:1fr auto 1fr;align-items:center}
+.left,.right{display:flex;justify-content:center;align-items:center;height:100%}
+#dpad{position:relative;width:min(42vh,40vw);height:min(42vh,40vw)}
+#dpad div{position:absolute;background:#2b2b31;border-radius:6px}
+#dpad .h{left:0;right:0;top:33.3%;height:33.4%}
+#dpad .v{top:0;bottom:0;left:33.3%;width:33.4%}
+#dpad .on{background:#e23b3b}
+.mid{display:flex;flex-direction:column;align-items:center;gap:18px;padding:0 8px}
+.small{display:flex;gap:16px}
+.small figure{margin:0;text-align:center;color:#b02a2a;font-size:11px}
+.pill{width:64px;height:20px;border-radius:10px;background:#2b2b31;margin-bottom:6px}
+.ab{display:flex;gap:min(5vw,28px);align-items:center;transform:rotate(-12deg)}
+.ab figure{margin:0;text-align:center;color:#b02a2a;font-size:15px}
+.btn{width:min(20vh,19vw);height:min(20vh,19vw);border-radius:50%;background:#c22e2e;border:4px solid #a4a19a;margin-bottom:6px}
+.on.btn{background:#ffd23c}.on.pill{background:#e23b3b}
+#status{display:flex;align-items:center;gap:6px;color:#555;font-size:11px}
+#dot{width:9px;height:9px;border-radius:50%;background:#999}
+#dot.ok{background:#2fae64}
+#bleBtn{display:none;border:0;background:#2d6fd6;color:#fff;border-radius:14px;padding:7px 14px;font:inherit}
+#menuBtn{border:0;background:#2b2b31;color:#fff;border-radius:14px;padding:7px 14px;font:inherit}
+#menu{position:fixed;inset:0;background:rgba(20,20,22,.92);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px}
+#menu.open{display:flex}
+#menu button,#menu label{width:min(320px,80vw);padding:14px;border-radius:12px;border:0;background:#33333a;color:#fff;font:600 16px -apple-system,system-ui,sans-serif;text-align:center}
+#menu .primary{background:#e23b3b}
+#menu input{display:none}
+#msg{min-height:20px;color:#ffd23c;text-align:center;max-width:80vw}
+#bar{width:min(320px,80vw);height:8px;border-radius:4px;background:#33333a;overflow:hidden;display:none}
+#bar div{height:100%;width:0;background:#4fd18b}
+#note{display:none;width:min(320px,80vw);color:#bbb;font:500 13px/1.4 -apple-system,system-ui,sans-serif;text-align:center}
+#nobt{display:none;position:fixed;inset:0;background:#141416;color:#fff;align-items:center;justify-content:center;text-align:center;font-size:17px;line-height:1.5;padding:30px;z-index:5}
+#rotate{display:none;position:fixed;inset:0;background:#141416;color:#fff;align-items:center;justify-content:center;text-align:center;font-size:18px;padding:30px}
+@media (orientation:portrait){#rotate{display:flex}}
+</style>
+</head>
+<body>
+<div id="pad">
+  <div class="left"><div id="dpad"><div class="h"></div><div class="v"></div>
+    <div data-b="0" style="left:33.3%;width:33.4%;top:0;height:33.3%"></div>
+    <div data-b="1" style="left:33.3%;width:33.4%;bottom:0;height:33.3%"></div>
+    <div data-b="2" style="top:33.3%;height:33.4%;left:0;width:33.3%"></div>
+    <div data-b="3" style="top:33.3%;height:33.4%;right:0;width:33.3%"></div>
+  </div></div>
+  <div class="mid">
+    <div id="status"><div id="dot"></div><span id="st">connecting…</span></div>
+    <div class="small">
+      <figure><div class="pill" data-b="4"></div>SELECT</figure>
+      <figure><div class="pill" data-b="5"></div>START</figure>
+    </div>
+    <button id="bleBtn">Connect</button>
+    <button id="menuBtn">Menu</button>
+  </div>
+  <div class="right"><div class="ab">
+    <figure><div class="btn" data-b="7"></div>B</figure>
+    <figure><div class="btn" data-b="6"></div>A</figure>
+  </div></div>
+</div>
+
+<div id="menu">
+  <label class="primary">Load a game (.nes)<input type="file" id="rom" accept=".nes,application/octet-stream"></label>
+  <div id="note">To load a new game, join the Wi-Fi <b>NES-TDisplay</b> (password mario123) and open 192.168.4.1 — or use the laptop page.</div>
+  <div id="bar"><div></div></div>
+  <button id="shape">Screen shape</button>
+  <button id="restart">Restart game</button>
+  <button id="close">Back to game</button>
+  <div id="msg"></div>
+</div>
+<div id="nobt">This page talks to the board over Bluetooth.<br>Safari can't do that on iPhone — open this same address in the free <b>Bluefy</b> app.</div>
+<div id="rotate">Turn your phone sideways to play</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let state = 0, lastSent = -1;
+function onBoardText(t) { if (t.startsWith('NES:MODE')) $('msg').textContent = 'Screen shape: ' + (t.includes('wide') ? 'wide' : 'original'); }
+function online(on, text) { $('dot').classList.toggle('ok', on); $('st').textContent = text; }
+
+// Two ways to reach the board, same packets on both:
+//  - Wi-Fi: this page is served by the board itself (http://192.168.4.1) and uses a WebSocket.
+//  - Bluetooth: this page is opened from an https address in Bluefy (iPhone) or Chrome (Android).
+const BLE = location.protocol !== 'http:';
+let send;
+
+if (!BLE) {
+  let ws = null;
+  const connect = () => {
+    ws = new WebSocket('ws://' + location.hostname + ':81/');
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { online(true, 'connected'); send([0xC3, 0x20]); lastSent = -1; };
+    ws.onclose = () => { online(false, 'reconnecting…'); setTimeout(connect, 1000); };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    ws.onmessage = e => { if (typeof e.data === 'string') onBoardText(e.data); };
+  };
+  send = a => { if (ws && ws.readyState === 1) ws.send(new Uint8Array(a)); };
+  connect();
+} else {
+  const SVC = '8b1a0001-5b3f-4b8e-9c4f-4e4553504144',
+        PAD = '8b1a0002-5b3f-4b8e-9c4f-4e4553504144',
+        STATUS = '8b1a0003-5b3f-4b8e-9c4f-4e4553504144';
+  let dev = null, pad = null, busy = false, queue = [], wantOnline = false;
+  $('menu').querySelector('label').style.display = 'none';
+  $('note').style.display = 'block';
+  if (!navigator.bluetooth) $('nobt').style.display = 'flex';
+  $('bleBtn').style.display = 'block';
+  online(false, 'not connected');
+
+  // one Bluetooth write at a time; a newer button state replaces an unsent older one
+  send = a => {
+    if (!pad) return;
+    if (a[0] === 0xA5) queue = queue.filter(p => p[0] !== 0xA5);
+    queue.push(a);
+    pump();
+  };
+  function pump() {
+    if (busy || !pad || !queue.length) return;
+    busy = true;
+    const data = new Uint8Array(queue.shift());
+    const w = pad.writeValueWithoutResponse ? pad.writeValueWithoutResponse(data) : pad.writeValue(data);
+    w.catch(() => {}).finally(() => { busy = false; pump(); });
+  }
+  async function attach() {
+    online(false, 'connecting…');
+    const gatt = await dev.gatt.connect();
+    const svc = await gatt.getPrimaryService(SVC);
+    pad = await svc.getCharacteristic(PAD);
+    const st = await svc.getCharacteristic(STATUS);
+    st.addEventListener('characteristicvaluechanged', e => onBoardText(new TextDecoder().decode(e.target.value)));
+    await st.startNotifications();
+    busy = false; queue = []; lastSent = -1;
+    online(true, 'connected'); $('bleBtn').style.display = 'none';
+    send([0xC3, 0x20]);
+  }
+  async function reconnect() {
+    while (wantOnline && dev && !dev.gatt.connected) {
+      try { await attach(); return; } catch (e) { online(false, 'reconnecting…'); await new Promise(r => setTimeout(r, 1500)); }
+    }
+  }
+  async function pick() {
+    try {
+      dev = await navigator.bluetooth.requestDevice({ filters: [{ services: [SVC] }] });
+      dev.addEventListener('gattserverdisconnected', () => {
+        pad = null; online(false, 'reconnecting…'); $('bleBtn').style.display = 'block'; reconnect();
+      });
+      wantOnline = true;
+      await attach();
+    } catch (e) {
+      online(false, dev ? 'could not connect — tap Connect' : 'not connected');
+    }
+  }
+  const tapConnect = e => { if (e) { e.stopPropagation(); e.preventDefault(); } if (!dev) pick(); else { wantOnline = true; reconnect(); } };
+  $('bleBtn').addEventListener('touchend', tapConnect);
+  $('bleBtn').onclick = () => tapConnect();
+}
+setInterval(() => { send([0xA5, state]); lastSent = state; }, 100);   // keep-alive; board releases buttons after 0.6 s of silence
+
+// ---- multi-touch: every finger is checked against every button, so you can slide between them ----
+const dpad = $('dpad');
+function bitsAt(x, y) {
+  const r = dpad.getBoundingClientRect();
+  if (x >= r.left - 30 && x <= r.right + 30 && y >= r.top - 30 && y <= r.bottom + 30) {
+    const dx = (x - (r.left + r.width / 2)) / (r.width / 2), dy = (y - (r.top + r.height / 2)) / (r.height / 2);
+    if (Math.hypot(dx, dy) < 0.22) return 0;            // dead centre
+    let b = 0;
+    if (dy < -0.38) b |= 1; if (dy > 0.38) b |= 2;       // diagonals allowed
+    if (dx < -0.38) b |= 4; if (dx > 0.38) b |= 8;
+    return b;
+  }
+  let best = null, bd = 1e9;
+  document.querySelectorAll('.btn,.pill').forEach(el => {
+    const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const d = Math.hypot(x - cx, y - cy), reach = Math.max(r.width, r.height) * 0.75;
+    if (d < reach && d < bd) { bd = d; best = el; }
+  });
+  return best ? 1 << +best.dataset.b : 0;
+}
+function update(e) {
+  if ($('menu').classList.contains('open')) return;
+  e.preventDefault();
+  let s = 0;
+  for (const t of e.touches) { if (t.target === $('menuBtn') || t.target === $('bleBtn')) continue; s |= bitsAt(t.clientX, t.clientY); }
+  if (s !== state) {
+    state = s;
+    document.querySelectorAll('[data-b]').forEach(el => el.classList.toggle('on', !!(s & (1 << +el.dataset.b))));
+    if (s !== lastSent) { send([0xA5, s]); lastSent = s; }
+  }
+}
+['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(t => $('pad').addEventListener(t, update, { passive: false }));
+
+// ---- menu ----
+$('menuBtn').addEventListener('touchend', e => { e.stopPropagation(); e.preventDefault(); $('menu').classList.add('open'); state = 0; send([0xA5, 0]); });
+$('menuBtn').onclick = () => $('menu').classList.add('open');
+$('close').onclick = () => $('menu').classList.remove('open');
+$('shape').onclick = () => send([0xC3, 0x02]);
+$('restart').onclick = () => { send([0xC3, 0x01]); $('menu').classList.remove('open'); };
+$('rom').onchange = e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  const fd = new FormData(); fd.append('rom', f, 'game.nes');
+  const x = new XMLHttpRequest();
+  $('bar').style.display = 'block'; $('bar').firstElementChild.style.width = '0';
+  $('msg').textContent = 'Sending ' + f.name + '…';
+  x.upload.onprogress = p => { if (p.lengthComputable) $('bar').firstElementChild.style.width = (p.loaded * 100 / p.total) + '%'; };
+  x.onload = () => {
+    $('msg').textContent = x.status === 200 ? 'Game saved — the board is restarting.' : 'Problem: ' + x.responseText;
+    if (x.status === 200) setTimeout(() => $('menu').classList.remove('open'), 2500);
+  };
+  x.onerror = () => { $('msg').textContent = 'Upload failed — stay close to the board and try again.'; };
+  x.open('POST', '/upload'); x.send(fd);
+};
+</script>
+</body>
+</html>
