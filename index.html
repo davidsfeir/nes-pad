@@ -184,15 +184,10 @@ function dpadBits(x, y) {
   const idx = straightFirst ? (rem < 30 ? k : k + 1) : (rem < 15 ? k : k + 1);
   return DIRS[idx % 8];
 }
-function bitsAt(x, y) {
-  // ask the browser what is actually under the finger first
-  const el = document.elementFromPoint(x, y);
+function bitsAt(x, y) {   // x, y in page-layout coordinates
   const r = dpad.getBoundingClientRect();
-  if ((el && el.closest('#dpad')) || (x >= r.left - 30 && x <= r.right + 30 && y >= r.top - 30 && y <= r.bottom + 30))
-    return dpadBits(x, y);
-  const hit = el && el.closest('.btn,.pill');
-  if (hit) return 1 << +hit.dataset.b;
-  // finger just off a button: take the nearest one, but only if it is clearly the nearest
+  if (x >= r.left - 30 && x <= r.right + 30 && y >= r.top - 30 && y <= r.bottom + 30) return dpadBits(x, y);
+  // nearest button, but only if the finger is on it or just off it, and it is clearly the nearest
   let best = null, bd = 1e9, second = 1e9;
   document.querySelectorAll('.btn,.pill').forEach(b => {
     const q = b.getBoundingClientRect(), d = Math.hypot(x - (q.left + q.width / 2), y - (q.top + q.height / 2));
@@ -201,18 +196,44 @@ function bitsAt(x, y) {
   });
   return best && bd < best._reach && second - bd > 12 ? 1 << +best.dataset.b : 0;
 }
+
+// Some in-app browsers (Bluefy) report finger positions in a zoomed/shifted frame, so raw
+// clientX/Y can point at the wrong button. The element the finger first lands on (touch.target)
+// is always right, so each finger starts from the centre of that element and then follows
+// only its movement from there.
+const fingers = new Map();
+function centreOf(el) { const q = el.getBoundingClientRect(); return [q.left + q.width / 2, q.top + q.height / 2]; }
+function startFinger(t) {
+  const el = t.target && t.target.closest ? t.target.closest('[data-b],#dpad') : null;
+  let p;
+  if (el && el.id === 'dpad') p = centreOf(el);           // landed on the middle of the cross
+  else if (el) p = centreOf(el);                          // an arm of the cross, A, B, Select or Start
+  else p = [t.clientX, t.clientY];                        // empty space: best we can do
+  fingers.set(t.identifier, { sx: t.clientX, sy: t.clientY, px: p[0], py: p[1] });
+}
 function update(e) {
   if (e.target.closest && e.target.closest('#bleBtn')) return;   // let the Connect tap become a normal click
   if ($('menu').classList.contains('open')) return;
   e.preventDefault();
-  let s = 0;
-  for (const t of e.touches) { if (t.target === $('menuBtn') || t.target === $('bleBtn')) continue; s |= bitsAt(t.clientX, t.clientY); }
+  if (e.type === 'touchstart') for (const t of e.changedTouches) startFinger(t);
+  if (e.type === 'touchend' || e.type === 'touchcancel') for (const t of e.changedTouches) fingers.delete(t.identifier);
+  let s = 0, dbg = [];
+  for (const t of e.touches) {
+    if (t.target === $('menuBtn') || t.target === $('bleBtn')) continue;
+    let f = fingers.get(t.identifier);
+    if (!f) { startFinger(t); f = fingers.get(t.identifier); }
+    const x = f.px + (t.clientX - f.sx), y = f.py + (t.clientY - f.sy);
+    s |= bitsAt(x, y);
+    if (DEBUG) dbg.push(Math.round(t.clientX) + ',' + Math.round(t.clientY) + '→' + Math.round(x) + ',' + Math.round(y));
+  }
+  if (DEBUG) $('st').textContent = dbg.join(' ') + ' vv' + (window.visualViewport ? visualViewport.scale.toFixed(2) : '?') + ' w' + innerWidth;
   if (s !== state) {
     state = s;
     document.querySelectorAll('[data-b]').forEach(el => el.classList.toggle('on', !!(s & (1 << +el.dataset.b))));
     if (s !== lastSent) { send([0xA5, s]); lastSent = s; }
   }
 }
+const DEBUG = /debug/.test(location.search);
 ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(t => $('pad').addEventListener(t, update, { passive: false }));
 
 // ---- menu ----
