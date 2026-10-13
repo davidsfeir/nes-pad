@@ -22,7 +22,7 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
 .small{display:flex;gap:16px}
 .small figure{margin:0;text-align:center;color:#b02a2a;font-size:11px}
 .pill{width:64px;height:20px;border-radius:10px;background:#2b2b31;margin-bottom:6px}
-.ab{display:flex;gap:min(5vw,28px);align-items:center;transform:rotate(-12deg)}
+.ab{display:flex;gap:min(7vw,40px);align-items:center}
 .ab figure{margin:0;text-align:center;color:#b02a2a;font-size:15px}
 .btn{width:min(20vh,19vw);height:min(20vh,19vw);border-radius:50%;background:#c22e2e;border:4px solid #a4a19a;margin-bottom:6px}
 .on.btn{background:#ffd23c}.on.pill{background:#e23b3b}
@@ -77,7 +77,7 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
   <button id="close">Back to game</button>
   <div id="msg"></div>
 </div>
-<div id="nobt">This page talks to the board over Bluetooth.<br>Safari can't do that on iPhone — open this same address in the free <b>Bluefy</b> app.</div>
+<div id="nobt"><div>This page talks to the board over Bluetooth.<br>Safari can't do that on iPhone — open this same address in the free <b>Bluefy</b> app.</div></div>
 <div id="rotate">Turn your phone sideways to play</div>
 
 <script>
@@ -169,23 +169,37 @@ setInterval(() => { send([0xA5, state]); lastSent = state; }, 100);   // keep-al
 
 // ---- multi-touch: every finger is checked against every button, so you can slide between them ----
 const dpad = $('dpad');
-function bitsAt(x, y) {
+// D-pad: 8 directions by angle. Straight directions get 60° each, diagonals only 30°,
+// so a thumb that lands a little low on "right" stays "right" instead of becoming "down-right".
+const DIRS = [8, 8 | 2, 2, 2 | 4, 4, 4 | 1, 1, 1 | 8];   // R, DR, D, DL, L, UL, U, UR
+function dpadBits(x, y) {
   const r = dpad.getBoundingClientRect();
-  if (x >= r.left - 30 && x <= r.right + 30 && y >= r.top - 30 && y <= r.bottom + 30) {
-    const dx = (x - (r.left + r.width / 2)) / (r.width / 2), dy = (y - (r.top + r.height / 2)) / (r.height / 2);
-    if (Math.hypot(dx, dy) < 0.22) return 0;            // dead centre
-    let b = 0;
-    if (dy < -0.38) b |= 1; if (dy > 0.38) b |= 2;       // diagonals allowed
-    if (dx < -0.38) b |= 4; if (dx > 0.38) b |= 8;
-    return b;
-  }
-  let best = null, bd = 1e9;
-  document.querySelectorAll('.btn,.pill').forEach(el => {
-    const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const d = Math.hypot(x - cx, y - cy), reach = Math.max(r.width, r.height) * 0.75;
-    if (d < reach && d < bd) { bd = d; best = el; }
+  const dx = (x - (r.left + r.width / 2)) / (r.width / 2), dy = (y - (r.top + r.height / 2)) / (r.height / 2);
+  if (Math.hypot(dx, dy) < 0.2) return 0;                 // dead centre
+  let a = Math.atan2(dy, dx) * 180 / Math.PI;               // 0 = right, 90 = down
+  if (a < 0) a += 360;
+  const k = Math.floor(a / 45), rem = a - k * 45;           // which 45° slice, and where inside it
+  // slice k runs from straight dir (k even) to diagonal or diagonal to straight (k odd)
+  const straightFirst = k % 2 === 0;
+  const idx = straightFirst ? (rem < 30 ? k : k + 1) : (rem < 15 ? k : k + 1);
+  return DIRS[idx % 8];
+}
+function bitsAt(x, y) {
+  // ask the browser what is actually under the finger first
+  const el = document.elementFromPoint(x, y);
+  const r = dpad.getBoundingClientRect();
+  if ((el && el.closest('#dpad')) || (x >= r.left - 30 && x <= r.right + 30 && y >= r.top - 30 && y <= r.bottom + 30))
+    return dpadBits(x, y);
+  const hit = el && el.closest('.btn,.pill');
+  if (hit) return 1 << +hit.dataset.b;
+  // finger just off a button: take the nearest one, but only if it is clearly the nearest
+  let best = null, bd = 1e9, second = 1e9;
+  document.querySelectorAll('.btn,.pill').forEach(b => {
+    const q = b.getBoundingClientRect(), d = Math.hypot(x - (q.left + q.width / 2), y - (q.top + q.height / 2));
+    if (d < bd) { second = bd; bd = d; best = b; } else if (d < second) second = d;
+    b._reach = Math.max(q.width, q.height) * 0.7;
   });
-  return best ? 1 << +best.dataset.b : 0;
+  return best && bd < best._reach && second - bd > 12 ? 1 << +best.dataset.b : 0;
 }
 function update(e) {
   if (e.target.closest && e.target.closest('#bleBtn')) return;   // let the Connect tap become a normal click
