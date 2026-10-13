@@ -155,12 +155,15 @@ if (!BLE) {
       wantOnline = true;
       await attach();
     } catch (e) {
-      online(false, dev ? 'could not connect — tap Connect' : 'not connected');
+      // show the real reason on screen (cancelled, Bluetooth off, not found…)
+      online(false, (e && (e.name + ': ' + e.message)) || 'could not connect');
     }
   }
-  const tapConnect = e => { if (e) { e.stopPropagation(); e.preventDefault(); } if (!dev) pick(); else { wantOnline = true; reconnect(); } };
-  $('bleBtn').addEventListener('touchend', tapConnect);
-  $('bleBtn').onclick = () => tapConnect();
+  // a plain click: the Bluetooth device chooser only opens from a real tap/click
+  $('bleBtn').onclick = () => {
+    online(false, 'opening chooser…');
+    if (!dev) pick(); else { wantOnline = true; reconnect(); }
+  };
 }
 setInterval(() => { send([0xA5, state]); lastSent = state; }, 100);   // keep-alive; board releases buttons after 0.6 s of silence
 
@@ -185,6 +188,7 @@ function bitsAt(x, y) {
   return best ? 1 << +best.dataset.b : 0;
 }
 function update(e) {
+  if (e.target.closest && e.target.closest('#bleBtn')) return;   // let the Connect tap become a normal click
   if ($('menu').classList.contains('open')) return;
   e.preventDefault();
   let s = 0;
