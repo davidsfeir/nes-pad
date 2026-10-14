@@ -72,6 +72,7 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
   <label class="primary">Load a game (.nes)<input type="file" id="rom" accept=".nes,application/octet-stream"></label>
   <div id="note">To load a new game, join the Wi-Fi <b>NES-TDisplay</b> (password mario123) and open 192.168.4.1 — or use the laptop page.</div>
   <div id="bar"><div></div></div>
+  <button id="sound">Sound: on</button>
   <button id="shape">Screen shape</button>
   <button id="restart">Restart game</button>
   <button id="close">Back to game</button>
@@ -90,9 +91,35 @@ function online(on, text) { $('dot').classList.toggle('ok', on); $('st').textCon
 //  - Wi-Fi: this page is served by the board itself (http://192.168.4.1) and uses a WebSocket.
 //  - Bluetooth: this page is opened from an https address in Bluefy (iPhone) or Chrome (Android).
 const BLE = location.protocol !== 'http:';
+
+// ---- game sound from the board (Bluetooth): signed 8-bit mono, 11025 samples/s ----
+let actx = null, nextTime = 0, soundOn = true, audioChr = null;
+function unlockAudio() {           // must run inside a tap: iPhones only start sound from a user action
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';   // play even with the silent switch on
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state !== 'running') actx.resume();
+    const b = actx.createBuffer(1, 1, 22050), src = actx.createBufferSource();   // a silent blip finishes the unlock
+    src.buffer = b; src.connect(actx.destination); src.start(0);
+  } catch (e) {}
+}
+function playPCM(dv) {
+  if (!actx || !soundOn || actx.state !== 'running') return;
+  const n = dv.byteLength;
+  if (!n) return;
+  const buf = actx.createBuffer(1, n, 11025), ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = dv.getInt8(i) / 128;
+  const now = actx.currentTime;
+  // Bluetooth arrives in bursts: keep ~0.12 s queued, and catch up if we drift too far behind
+  if (nextTime < now + 0.03 || nextTime > now + 0.45) nextTime = now + 0.12;
+  const src = actx.createBufferSource();
+  src.buffer = buf; src.connect(actx.destination); src.start(nextTime);
+  nextTime += buf.duration;
+}
 let send;
 
 if (!BLE) {
+  $('sound').style.display = 'none';   // sound comes over Bluetooth only
   let ws = null;
   const connect = () => {
     ws = new WebSocket('ws://' + location.hostname + ':81/');
@@ -107,7 +134,8 @@ if (!BLE) {
 } else {
   const SVC = '8b1a0001-5b3f-4b8e-9c4f-4e4553504144',
         PAD = '8b1a0002-5b3f-4b8e-9c4f-4e4553504144',
-        STATUS = '8b1a0003-5b3f-4b8e-9c4f-4e4553504144';
+        STATUS = '8b1a0003-5b3f-4b8e-9c4f-4e4553504144',
+        AUDIO = '8b1a0004-5b3f-4b8e-9c4f-4e4553504144';
   let dev = null, pad = null, busy = false, queue = [], wantOnline = false;
   $('menu').querySelector('label').style.display = 'none';
   $('note').style.display = 'block';
@@ -137,6 +165,11 @@ if (!BLE) {
     const st = await svc.getCharacteristic(STATUS);
     st.addEventListener('characteristicvaluechanged', e => onBoardText(new TextDecoder().decode(e.target.value)));
     await st.startNotifications();
+    try {                      // older board firmware has no sound channel: just skip it
+      audioChr = await svc.getCharacteristic(AUDIO);
+      audioChr.addEventListener('characteristicvaluechanged', e => playPCM(e.target.value));
+      if (soundOn) await audioChr.startNotifications();
+    } catch (e) { audioChr = null; }
     busy = false; queue = []; lastSent = -1;
     online(true, 'connected'); $('bleBtn').style.display = 'none';
     send([0xC3, 0x20]);
@@ -161,6 +194,7 @@ if (!BLE) {
   }
   // a plain click: the Bluetooth device chooser only opens from a real tap/click
   $('bleBtn').onclick = () => {
+    unlockAudio();
     online(false, 'opening chooser…');
     if (!dev) pick(); else { wantOnline = true; reconnect(); }
   };
@@ -241,6 +275,12 @@ $('menuBtn').addEventListener('touchend', e => { e.stopPropagation(); e.preventD
 $('menuBtn').onclick = () => $('menu').classList.add('open');
 $('close').onclick = () => $('menu').classList.remove('open');
 $('shape').onclick = () => send([0xC3, 0x02]);
+$('sound').onclick = () => {
+  soundOn = !soundOn; $('sound').textContent = 'Sound: ' + (soundOn ? 'on' : 'off');
+  if (soundOn) unlockAudio();
+  if (audioChr) (soundOn ? audioChr.startNotifications() : audioChr.stopNotifications()).catch(() => {});
+};
+$('pad').addEventListener('touchend', () => { if (soundOn && BLE && (!actx || actx.state !== 'running')) unlockAudio(); });
 $('restart').onclick = () => { send([0xC3, 0x01]); $('menu').classList.remove('open'); };
 $('rom').onchange = e => {
   const f = e.target.files[0]; e.target.value = '';
