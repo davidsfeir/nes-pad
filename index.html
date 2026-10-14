@@ -31,9 +31,14 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
 #dot.ok{background:#2fae64}
 #bleBtn{display:none;border:0;background:#2d6fd6;color:#fff;border-radius:14px;padding:7px 14px;font:inherit}
 #menuBtn{border:0;background:#2b2b31;color:#fff;border-radius:14px;padding:7px 14px;font:inherit}
-#menu{position:fixed;inset:0;background:rgba(20,20,22,.92);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px}
+#menu{position:fixed;inset:0;background:rgba(20,20,22,.94);color:#fff;display:none;flex-direction:row;align-items:center;justify-content:center;gap:24px;padding:16px}
 #menu.open{display:flex}
-#menu button,#menu label{width:min(320px,80vw);padding:14px;border-radius:12px;border:0;background:#33333a;color:#fff;font:600 16px -apple-system,system-ui,sans-serif;text-align:center}
+#menu .col{display:flex;flex-direction:column;align-items:center;gap:9px;max-height:92vh}
+#menu .h{font:700 13px -apple-system,system-ui,sans-serif;color:#aaa;letter-spacing:.08em}
+#games{display:flex;flex-direction:column;gap:8px;overflow-y:auto;max-height:78vh;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+#games button{width:min(300px,42vw);text-align:left;padding:11px 14px}
+#games button.cur{background:#ffd23c;color:#222}
+#menu button,#menu label{width:min(300px,42vw);padding:11px;border-radius:12px;border:0;background:#33333a;color:#fff;font:600 16px -apple-system,system-ui,sans-serif;text-align:center}
 #menu .primary{background:#e23b3b}
 #menu input{display:none}
 #msg{min-height:20px;color:#ffd23c;text-align:center;max-width:80vw}
@@ -69,7 +74,9 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
 </div>
 
 <div id="menu">
-  <label class="primary">Load a game (.nes)<input type="file" id="rom" accept=".nes,application/octet-stream"></label>
+  <div class="col"><div class="h">GAMES</div><div id="games"><div class="h">loading…</div></div></div>
+  <div class="col">
+  <label class="primary">Load a game<input type="file" id="rom" accept=".nes,.gg,.sms,application/octet-stream"></label>
   <div id="note">To load a new game, join the Wi-Fi <b>NES-TDisplay</b> (password mario123) and open 192.168.4.1 — or use the laptop page.</div>
   <div id="bar"><div></div></div>
   <button id="sound">Sound: on</button>
@@ -77,6 +84,7 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
   <button id="restart">Restart game</button>
   <button id="close">Back to game</button>
   <div id="msg"></div>
+  </div>
 </div>
 <div id="nobt"><div>This page talks to the board over Bluetooth.<br>Safari can't do that on iPhone — open this same address in the free <b>Bluefy</b> app.</div></div>
 <div id="rotate">Turn your phone sideways to play</div>
@@ -84,7 +92,31 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
 <script>
 const $ = id => document.getElementById(id);
 let state = 0, lastSent = -1;
-function onBoardText(t) { if (t.startsWith('NES:MODE')) $('msg').textContent = 'Screen shape: ' + (t.includes('wide') ? 'wide' : 'original'); }
+let gameList = [], gameCur = -1;
+function onBoardText(t) {
+  if (t.startsWith('NES:MODE')) $('msg').textContent = 'Screen shape: ' + (t.includes('wide') ? 'wide' : 'original');
+  else if (t.startsWith('NES:GAMES ')) { gameList = []; gameCur = -1; }
+  else if (t.startsWith('NES:GAME ')) { const m = t.match(/^NES:GAME (\d+) (.*)$/); if (m) gameList[+m[1]] = m[2]; }
+  else if (t.startsWith('NES:CUR ')) { gameCur = +t.slice(8); showGames(); }
+}
+function showGames() {
+  const box = $('games'); box.innerHTML = '';
+  if (!gameList.length) { box.innerHTML = '<div class="h">no games yet</div>'; return; }
+  gameList.forEach((name, i) => {
+    const b = document.createElement('button');
+    const sys = /\.gg$/i.test(name) ? 'Game Gear' : /\.sms$/i.test(name) ? 'Master System' : 'NES';
+    b.textContent = name.replace(/\.(nes|gg|sms)$/i, '') + '  ·  ' + sys;
+    if (i === gameCur) b.className = 'cur';
+    b.onclick = () => {
+      if (i === gameCur) { $('menu').classList.remove('open'); return; }
+      $('msg').textContent = 'Starting ' + name.replace(/\.(nes|gg|sms)$/i, '') + '… (the board restarts, then reconnects)';
+      send([0xC3, 0x41, i]);
+      setTimeout(() => $('menu').classList.remove('open'), 1800);
+    };
+    box.appendChild(b);
+  });
+}
+function openMenu() { $('menu').classList.add('open'); state = 0; send([0xA5, 0]); send([0xC3, 0x40]); }
 function online(on, text) { $('dot').classList.toggle('ok', on); $('st').textContent = text; }
 
 // Two ways to reach the board, same packets on both:
@@ -283,8 +315,8 @@ const DEBUG = /debug/.test(location.search);
 ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(t => $('pad').addEventListener(t, update, { passive: false }));
 
 // ---- menu ----
-$('menuBtn').addEventListener('touchend', e => { e.stopPropagation(); e.preventDefault(); $('menu').classList.add('open'); state = 0; send([0xA5, 0]); });
-$('menuBtn').onclick = () => $('menu').classList.add('open');
+$('menuBtn').addEventListener('touchend', e => { e.stopPropagation(); e.preventDefault(); openMenu(); });
+$('menuBtn').onclick = openMenu;
 $('close').onclick = () => $('menu').classList.remove('open');
 $('shape').onclick = () => send([0xC3, 0x02]);
 $('sound').onclick = () => {
@@ -297,7 +329,7 @@ $('restart').onclick = () => { send([0xC3, 0x01]); $('menu').classList.remove('o
 $('rom').onchange = e => {
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
-  const fd = new FormData(); fd.append('rom', f, 'game.nes');
+  const fd = new FormData(); fd.append('rom', f, f.name);
   const x = new XMLHttpRequest();
   $('bar').style.display = 'block'; $('bar').firstElementChild.style.width = '0';
   $('msg').textContent = 'Sending ' + f.name + '…';
