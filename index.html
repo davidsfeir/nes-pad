@@ -92,7 +92,7 @@ function online(on, text) { $('dot').classList.toggle('ok', on); $('st').textCon
 //  - Bluetooth: this page is opened from an https address in Bluefy (iPhone) or Chrome (Android).
 const BLE = location.protocol !== 'http:';
 
-// ---- game sound from the board (Bluetooth): signed 8-bit mono, 11025 samples/s ----
+// ---- game sound from the board (Bluetooth): IMA ADPCM, mono, 11025 samples/s ----
 let actx = null, nextTime = 0, soundOn = true, audioChr = null;
 function unlockAudio() {           // must run inside a tap: iPhones only start sound from a user action
   try {
@@ -103,19 +103,31 @@ function unlockAudio() {           // must run inside a tap: iPhones only start 
     src.buffer = b; src.connect(actx.destination); src.start(0);
   } catch (e) {}
 }
+const STEP = [7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,1707,1878,2066,2272,2499,2749,3024,3327,3660,4026,4428,4871,5358,5894,6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,22385,24623,27086,29794,32767];
+const IDX = [-1,-1,-1,-1,2,4,6,8,-1,-1,-1,-1,2,4,6,8];
 function playPCM(dv) {
-  if (!actx || !soundOn || actx.state !== 'running') return;
-  const n = dv.byteLength;
-  if (!n) return;
+  if (!actx || !soundOn || actx.state !== 'running' || dv.byteLength < 5) return;
+  // decode: 4-byte header with the decoder state, then two samples per byte
+  let pred = dv.getInt16(0, true), index = dv.getUint8(2);
+  const n = (dv.byteLength - 4) * 2;
   const buf = actx.createBuffer(1, n, 11025), ch = buf.getChannelData(0);
-  for (let i = 0; i < n; i++) ch[i] = dv.getInt8(i) / 128;
+  for (let i = 0; i < n; i++) {
+    const byte = dv.getUint8(4 + (i >> 1)), code = (i & 1) ? byte >> 4 : byte & 15;
+    let step = STEP[index], vp = step >> 3;
+    if (code & 4) vp += step; if (code & 2) vp += step >> 1; if (code & 1) vp += step >> 2;
+    pred += (code & 8) ? -vp : vp;
+    if (pred > 32767) pred = 32767; else if (pred < -32768) pred = -32768;
+    index += IDX[code]; if (index < 0) index = 0; else if (index > 88) index = 88;
+    ch[i] = pred / 32768;
+  }
   const now = actx.currentTime;
-  // Bluetooth arrives in bursts: keep ~0.12 s queued, and catch up if we drift too far behind
-  if (nextTime < now + 0.03 || nextTime > now + 0.45) nextTime = now + 0.12;
+  // Bluetooth arrives in bursts: keep ~0.2 s queued so it never runs dry; catch up if far behind
+  if (nextTime < now + 0.05 || nextTime > now + 0.6) nextTime = now + 0.2;
   const src = actx.createBufferSource();
   src.buffer = buf; src.connect(actx.destination); src.start(nextTime);
   nextTime += buf.duration;
 }
+
 let send;
 
 if (!BLE) {
