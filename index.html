@@ -79,7 +79,7 @@ html,body{margin:0;height:100%;background:#d9d6cf;color:#222;font:600 13px/1.2 -
   <label class="primary">Load a game<input type="file" id="rom" accept=".nes,.gg,.sms,application/octet-stream"></label>
   <div id="note">To load a new game, join the Wi-Fi <b>NES-TDisplay</b> (password mario123) and open 192.168.4.1 — or use the laptop page.</div>
   <div id="bar"><div></div></div>
-  <button id="sound">Sound: on</button>
+  <button id="sound">Sound: off</button>
   <button id="shape">Screen shape</button>
   <button id="restart">Restart game</button>
   <button id="close">Back to game</button>
@@ -125,7 +125,7 @@ function online(on, text) { $('dot').classList.toggle('ok', on); $('st').textCon
 const BLE = location.protocol !== 'http:';
 
 // ---- game sound from the board (Bluetooth): IMA ADPCM, mono, 11025 samples/s ----
-let actx = null, nextTime = 0, soundOn = true, audioChr = null;
+let actx = null, nextTime = 0, soundOn = false, audioChr = null;   // off by default: sound traffic makes the buttons lag
 function unlockAudio() {           // must run inside a tap: iPhones only start sound from a user action
   try {
     if (navigator.audioSession) navigator.audioSession.type = 'playback';   // play even with the silent switch on
@@ -238,7 +238,6 @@ if (!BLE) {
   }
   // a plain click: the Bluetooth device chooser only opens from a real tap/click
   $('bleBtn').onclick = () => {
-    unlockAudio();
     online(false, 'opening chooser…');
     if (!dev) pick(); else { wantOnline = true; reconnect(); }
   };
@@ -324,7 +323,7 @@ $('sound').onclick = () => {
   if (soundOn) unlockAudio();
   if (audioChr) (soundOn ? audioChr.startNotifications() : audioChr.stopNotifications()).catch(() => {});
 };
-$('pad').addEventListener('touchend', () => { if (soundOn && BLE && (!actx || actx.state !== 'running')) unlockAudio(); });
+
 $('restart').onclick = () => { send([0xC3, 0x01]); $('menu').classList.remove('open'); };
 $('rom').onchange = e => {
   const f = e.target.files[0]; e.target.value = '';
